@@ -585,44 +585,68 @@ function saveHistory(list){
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch(e){}
 }
 
-function saveCurrentProject(){
-  var list = loadHistory();
-  var projet = {
-    id: Date.now().toString(),
-    savedAt: new Date().toLocaleDateString("fr-FR"),
-    nom: S.projNom,
-    edite: S.projEdite,
-    controle: S.projControle,
-    rev: S.projRev,
-    config: {
-      porteSimple: JSON.parse(JSON.stringify(S.porteSimple)),
-      porteDouble: JSON.parse(JSON.stringify(S.porteDouble)),
-      chevFumisterie: S.chevFumisterie,
-      chevHTBT: S.chevHTBT,
-      chevEntree: JSON.parse(JSON.stringify(S.chevEntree)),
-      chevRejet: JSON.parse(JSON.stringify(S.chevRejet)),
-      boitePolice: JSON.parse(JSON.stringify(S.boitePolice)),
-      boiteFuel: JSON.parse(JSON.stringify(S.boiteFuel)),
-      gardeCorps: S.gardeCorps,
-      gardeCorpsPlats: S.gardeCorpsPlats,
-      rails: S.rails,
-      crosses: S.crosses,
-      anneaux: S.anneaux,
-      bac: S.bac,
-      renfortsInt: S.renfortsInt,
-      renfortsSous: S.renfortsSous
-    }
-  };
-  // Check if project with same name already exists -> update it
-  var idx = list.findIndex(function(p){ return p.nom === S.projNom && p.rev === S.projRev; });
-  if(idx >= 0){
-    projet.id = list[idx].id; // keep same id
-    list[idx] = projet;
-  } else {
-    list.unshift(projet);
+function showToast(msg){
+  var t = document.getElementById("toast");
+  if(!t){
+    t = document.createElement("div");
+    t.id = "toast";
+    t.style.cssText = "position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#22c55e;color:#fff;padding:10px 20px;border-radius:20px;font-family:Barlow,sans-serif;font-weight:700;font-size:14px;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;pointer-events:none;";
+    document.body.appendChild(t);
   }
-  saveHistory(list);
+  t.textContent = msg;
+  t.style.opacity = "1";
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function(){ t.style.opacity = "0"; }, 2500);
 }
+
+function saveCurrentProject(){
+  try {
+    if(!S.projNom) return; // Ne pas sauvegarder si pas de nom du tout
+    var list = loadHistory();
+    var projet = {
+      id: Date.now().toString(),
+      savedAt: new Date().toLocaleDateString("fr-FR"),
+      nom: S.projNom || "Projet sans nom",
+      edite: S.projEdite || "",
+      controle: S.projControle || "",
+      rev: S.projRev || "—",
+      config: {
+        porteSimple: JSON.parse(JSON.stringify(S.porteSimple || [])),
+        porteDouble: JSON.parse(JSON.stringify(S.porteDouble || [])),
+        chevFumisterie: S.chevFumisterie || 0,
+        chevHTBT: S.chevHTBT || 0,
+        chevEntree: JSON.parse(JSON.stringify(S.chevEntree || [])),
+        chevRejet: JSON.parse(JSON.stringify(S.chevRejet || [])),
+        boitePolice: JSON.parse(JSON.stringify(S.boitePolice || [])),
+        boiteFuel: JSON.parse(JSON.stringify(S.boiteFuel || [])),
+        gardeCorps: S.gardeCorps || false,
+        gardeCorpsPlats: S.gardeCorpsPlats || 0,
+        rails: S.rails || 0,
+        crosses: S.crosses || 0,
+        anneaux: S.anneaux || 0,
+        bac: S.bac || 0,
+        renfortsInt: S.renfortsInt || 0,
+        renfortsSous: S.renfortsSous || 0
+      }
+    };
+    // Check if project with same name+rev already exists -> update it
+    var found = false;
+    for(var i=0; i<list.length; i++){
+      if(list[i].nom === projet.nom && list[i].rev === projet.rev){
+        projet.id = list[i].id;
+        list[i] = projet;
+        found = true;
+        break;
+      }
+    }
+    if(!found){ list.unshift(projet); }
+    saveHistory(list);
+    showToast("\u2713 Projet sauvegard\u00e9 !");
+  } catch(e) {
+    console.error("Erreur sauvegarde:", e);
+  }
+}
+
 
 function deleteProject(id){
   var list = loadHistory().filter(function(p){ return p.id !== id; });
@@ -1468,6 +1492,7 @@ function toggleCat(bodyId,header){
 }
 // showPage defined above
 function retourConfig(){
+  saveCurrentProject();
   showPage("page-config");
   document.getElementById("stepBadge").textContent="\u00c9tape 1/2";
 }
