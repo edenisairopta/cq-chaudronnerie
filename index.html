@@ -251,6 +251,29 @@ select.form-input option{background:var(--bg2);}
 .modal-delete-confirm{flex:1;padding:12px;background:var(--red);border:none;color:#fff;border-radius:var(--radius);font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:14px;cursor:pointer;transition:all .15s;}
 .modal-delete-confirm:hover{background:#dc2626;}
 </style>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script>
+    var firebaseConfig = {
+      apiKey: "AIzaSyAD9Ls3lcSNzxhzdIl3FOnOswIrizvG-UE",
+      authDomain: "airopta-cq-general.firebaseapp.com",
+      projectId: "airopta-cq-general",
+      storageBucket: "airopta-cq-general.firebasestorage.app",
+      messagingSenderId: "152508340985",
+      appId: "1:152508340985:web:fa785cf810cf505bc42028"
+    };
+    try {
+      firebase.initializeApp(firebaseConfig);
+      window.db = firebase.firestore();
+      window.firebaseReady = true;
+    } catch(e) {
+      console.warn("Firebase init failed:", e);
+      window.firebaseReady = false;
+      window.db = null;
+    }
+  </script>
 </head>
 <body>
 
@@ -572,172 +595,145 @@ select.form-input option{background:var(--bg2);}
 // ══════════════════════════════════════════
 //  HISTORIQUE PROJETS (localStorage)
 // ══════════════════════════════════════════
+
+// ══════════════════════════════════════════
+//  FIREBASE HISTORY - Chaudronnerie
+// ══════════════════════════════════════════
 var STORAGE_KEY = "airopta_projets";
+var COLLECTION_CHAUD = "projets_chaudronnerie";
+function isFirebaseAvailable(){ return window.firebaseReady === true && window.db !== null; }
 
-function loadHistory(){
-  try {
-    var raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch(e){ return []; }
-}
-
-function saveHistory(list){
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch(e){}
-}
-
-function showToast(msg){
-  var t = document.getElementById("toast");
-  if(!t){
-    t = document.createElement("div");
-    t.id = "toast";
-    t.style.cssText = "position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#22c55e;color:#fff;padding:10px 20px;border-radius:20px;font-family:Barlow,sans-serif;font-weight:700;font-size:14px;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;pointer-events:none;";
-    document.body.appendChild(t);
-  }
+function showToast(msg, color){
+  var t=document.getElementById("toast-cqg");
+  if(!t){ t=document.createElement("div"); t.id="toast-cqg"; t.style.cssText="position:fixed;bottom:90px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:20px;font-family:Barlow,sans-serif;font-weight:700;font-size:14px;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;pointer-events:none;color:#fff;"; document.body.appendChild(t); }
+  t.style.background = color||"#22c55e";
   t.textContent = msg;
   t.style.opacity = "1";
   clearTimeout(t._timer);
-  t._timer = setTimeout(function(){ t.style.opacity = "0"; }, 2500);
+  t._timer = setTimeout(function(){ t.style.opacity="0"; }, 2500);
+}
+
+function loadHistory(callback){
+  if(!isFirebaseAvailable()){
+    try{ var r=localStorage.getItem(STORAGE_KEY); var list=r?JSON.parse(r):[]; if(callback) callback(list); else return list; }
+    catch(e){ if(callback) callback([]); else return []; }
+    return;
+  }
+  db.collection(COLLECTION_CHAUD).orderBy("savedAt","desc").limit(50).get().then(function(snap){
+    var list=[];
+    snap.forEach(function(doc){ var d=doc.data(); d.id=doc.id; list.push(d); });
+    if(callback) callback(list);
+  }).catch(function(e){
+    console.error("Firebase load error:",e);
+    try{ var r=localStorage.getItem(STORAGE_KEY); if(callback) callback(r?JSON.parse(r):[]); }
+    catch(e2){ if(callback) callback([]); }
+  });
+}
+
+function saveHistory(list){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }catch(e){}
 }
 
 function saveCurrentProject(){
-  try {
-    if(!S.projNom) return; // Ne pas sauvegarder si pas de nom du tout
-    var list = loadHistory();
-    var projet = {
-      id: Date.now().toString(),
-      savedAt: new Date().toLocaleDateString("fr-FR"),
-      nom: S.projNom || "Projet sans nom",
-      edite: S.projEdite || "",
-      controle: S.projControle || "",
-      rev: S.projRev || "—",
-      config: {
-        porteSimple: JSON.parse(JSON.stringify(S.porteSimple || [])),
-        porteDouble: JSON.parse(JSON.stringify(S.porteDouble || [])),
-        chevFumisterie: S.chevFumisterie || 0,
-        chevHTBT: S.chevHTBT || 0,
-        chevEntree: JSON.parse(JSON.stringify(S.chevEntree || [])),
-        chevRejet: JSON.parse(JSON.stringify(S.chevRejet || [])),
-        boitePolice: JSON.parse(JSON.stringify(S.boitePolice || [])),
-        boiteFuel: JSON.parse(JSON.stringify(S.boiteFuel || [])),
-        gardeCorps: S.gardeCorps || false,
-        gardeCorpsPlats: S.gardeCorpsPlats || 0,
-        rails: S.rails || 0,
-        crosses: S.crosses || 0,
-        anneaux: S.anneaux || 0,
-        bac: S.bac || 0,
-        renfortsInt: S.renfortsInt || 0,
-        renfortsSous: S.renfortsSous || 0
-      }
+  try{
+    if(!S.projNom) return;
+    var config = {
+      porteSimple: JSON.parse(JSON.stringify(S.porteSimple||[])),
+      porteDouble: JSON.parse(JSON.stringify(S.porteDouble||[])),
+      chevFumisterie: S.chevFumisterie||0,
+      chevHTBT: S.chevHTBT||0,
+      chevEntree: JSON.parse(JSON.stringify(S.chevEntree||[])),
+      chevRejet: JSON.parse(JSON.stringify(S.chevRejet||[])),
+      boitePolice: JSON.parse(JSON.stringify(S.boitePolice||[])),
+      boiteFuel: JSON.parse(JSON.stringify(S.boiteFuel||[])),
+      gardeCorps: S.gardeCorps||false,
+      gardeCorpsPlats: S.gardeCorpsPlats||0,
+      rails: S.rails||0, crosses: S.crosses||0, anneaux: S.anneaux||0,
+      bac: S.bac||0, renfortsInt: S.renfortsInt||0, renfortsSous: S.renfortsSous||0
     };
-    // Check if project with same name+rev already exists -> update it
-    var found = false;
-    for(var i=0; i<list.length; i++){
-      if(list[i].nom === projet.nom && list[i].rev === projet.rev){
-        projet.id = list[i].id;
-        list[i] = projet;
-        found = true;
-        break;
-      }
-    }
-    if(!found){ list.unshift(projet); }
-    saveHistory(list);
-    showToast("\u2713 Projet sauvegard\u00e9 !");
-  } catch(e) {
-    console.error("Erreur sauvegarde:", e);
-  }
-}
+    var projet = {
+      savedAt: firebaseAvailable ? firebase.firestore.Timestamp.now() : null,
+      savedAtStr: new Date().toLocaleDateString("fr-FR"),
+      nom: S.projNom, edite: S.projEdite, controle: S.projControle, rev: S.projRev,
+      config: config
+    };
 
+    if(!isFirebaseAvailable()){
+      var list=JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]");
+      var found=false;
+      for(var i=0;i<list.length;i++){
+        if(list[i].nom===projet.nom&&list[i].rev===projet.rev){ list[i]=Object.assign({},projet,{id:list[i].id}); found=true; break; }
+      }
+      if(!found) list.unshift(Object.assign({},projet,{id:Date.now().toString()}));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      showToast("\u2713 Projet sauvegard\u00e9 !");
+      return;
+    }
+
+    db.collection(COLLECTION_CHAUD).where("nom","==",S.projNom).where("rev","==",S.projRev).get().then(function(snap){
+      if(!snap.empty){ return db.collection(COLLECTION_CHAUD).doc(snap.docs[0].id).set(projet); }
+      else { return db.collection(COLLECTION_CHAUD).add(projet); }
+    }).then(function(){ showToast("\u2713 Projet sauvegard\u00e9 !"); })
+    .catch(function(e){ console.error("Firebase save error:",e); showToast("\u26a0 Erreur sauvegarde","#ef4444"); });
+  }catch(e){ console.error("saveCurrentProject error:",e); }
+}
 
 function deleteProject(id){
-  var list = loadHistory().filter(function(p){ return p.id !== id; });
-  saveHistory(list);
-  renderHistory();
-}
-
-function loadProject(projet){
-  // Restore S from saved config
-  var c = projet.config;
-  S.porteSimple = c.porteSimple || [];
-  S.porteDouble = c.porteDouble || [];
-  S.chevFumisterie = c.chevFumisterie || 0;
-  S.chevHTBT = c.chevHTBT || 0;
-  S.chevEntree = c.chevEntree || [];
-  S.chevRejet = c.chevRejet || [];
-  S.boitePolice = c.boitePolice || [];
-  S.boiteFuel = c.boiteFuel || [];
-  S.gardeCorps = c.gardeCorps || false;
-  S.gardeCorpsPlats = c.gardeCorpsPlats || 0;
-  S.rails = c.rails || 0;
-  S.crosses = c.crosses || 0;
-  S.anneaux = c.anneaux || 0;
-  S.bac = c.bac || 0;
-  S.renfortsInt = c.renfortsInt || 0;
-  S.renfortsSous = c.renfortsSous || 0;
-  S.projNom = projet.nom;
-  S.projEdite = projet.edite;
-  S.projControle = projet.controle;
-  S.projRev = projet.rev;
-  // Restore form fields
-  document.getElementById("projNom").value = S.projNom;
-  document.getElementById("projEdite").value = S.projEdite;
-  document.getElementById("projControle").value = S.projControle;
-  document.getElementById("projRev").value = S.projRev;
-  // Restore steppers UI
-  document.querySelectorAll(".stepper").forEach(function(s){
-    var key = s.dataset.key;
-    var withFaces = s.dataset.withfaces === "1";
-    var valEl = s.querySelector(".stepper-val");
-    var qty = withFaces ? (S[key] ? S[key].length : 0) : (S[key] || 0);
-    valEl.textContent = qty;
-    valEl.classList.toggle("nonzero", qty > 0);
-    var pi = s.closest(".param-item");
-    if(pi) pi.classList.toggle("active-item", qty > 0);
-    if(withFaces) refreshItemList(key);
-  });
-  // Restore toggle
-  var gcToggle = document.getElementById("toggle-gc");
-  if(gcToggle){
-    gcToggle.classList.toggle("on", S.gardeCorps);
-    var lbl = document.getElementById("lbl-gc");
-    if(lbl){ lbl.textContent = S.gardeCorps ? "OUI" : "NON"; lbl.classList.toggle("on", S.gardeCorps); }
-    document.getElementById("sub-gc").classList.toggle("show", S.gardeCorps);
-    document.getElementById("pi-gc").classList.toggle("active-item", S.gardeCorps);
+  if(!isFirebaseAvailable()){
+    try{
+      var list=JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]").filter(function(p){ return p.id!==id; });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      renderHistory();
+    }catch(e){}
+    return;
   }
-  showPage("page-config");
-  document.getElementById("stepBadge").textContent = "\u00c9tape 1/2";
+  db.collection(COLLECTION_CHAUD).doc(id).delete().then(function(){ renderHistory(); })
+  .catch(function(e){ console.error("Firebase delete error:",e); });
 }
 
 function renderHistory(){
-  var list = loadHistory();
-  var container = document.getElementById("historyList");
-  var emptyMsg = document.getElementById("historyEmpty");
+  var container=document.getElementById("historyList");
+  var emptyMsg=document.getElementById("historyEmpty");
   if(!container) return;
-  container.innerHTML = "";
-  if(list.length === 0){
-    if(emptyMsg) emptyMsg.style.display = "block";
-    return;
-  }
-  if(emptyMsg) emptyMsg.style.display = "none";
-  list.forEach(function(projet){
-    var card = document.createElement("div");
-    card.className = "history-card";
-    var ncBadge = "";
-    card.innerHTML =
-      "<div class=\"hc-body\" onclick=\"loadProjectAndGo('"+projet.id+"')\">" +
-        "<div class=\"hc-top\">" +
-          "<div class=\"hc-name\">"+projet.nom+"</div>" +
-          "<div class=\"hc-rev\">"+projet.rev+"</div>" +
-        "</div>" +
-        "<div class=\"hc-meta\">" +
-          "<span>\ud83d\udcc5 Enregistr\u00e9 le "+projet.savedAt+"</span>" +
-          "<span>\ud83d\udc64 "+projet.controle+"</span>" +
-        "</div>" +
-        "<div class=\"hc-chips\">" + buildConfigChips(projet.config) + "</div>" +
-      "</div>" +
-      "<button class=\"hc-delete\" onclick=\"confirmDelete('"+projet.id+"','"+projet.nom.replace(/'/g,"\\'")+"')\" title=\"Supprimer ce projet\">" +
-        "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"3 6 5 6 21 6\"/><path d=\"M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6\"/><path d=\"M10 11v6M14 11v6\"/><path d=\"M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2\"/></svg>" +
-      "</button>";
-    container.appendChild(card);
+  container.innerHTML="<div style=\"text-align:center;padding:20px;color:var(--text3);font-size:13px;\">\ud83d\udd04 Chargement...</div>";
+  if(emptyMsg) emptyMsg.style.display="none";
+
+  loadHistory(function(list){
+    container.innerHTML="";
+    if(list.length===0){ if(emptyMsg) emptyMsg.style.display="block"; return; }
+    if(emptyMsg) emptyMsg.style.display="none";
+    list.forEach(function(projet){
+      var savedDate=projet.savedAtStr||(projet.savedAt&&projet.savedAt.toDate?projet.savedAt.toDate().toLocaleDateString("fr-FR"):"—");
+      var card=document.createElement("div"); card.className="history-card";
+      card.innerHTML="<div class=\"hc-body\" onclick=\"loadProjectAndGo('"+projet.id+"')\">"+
+        "<div class=\"hc-top\"><div class=\"hc-name\">"+projet.nom+"</div><div class=\"hc-rev\">"+projet.rev+"</div></div>"+
+        "<div class=\"hc-meta\"><span>\ud83d\udcc5 "+savedDate+"</span><span>\ud83d\udc64 "+projet.controle+"</span></div>"+
+        "<div class=\"hc-chips\">"+buildConfigChips(projet.config||{})+"</div>"+
+        "</div>"+
+        "<button class=\"hc-delete\" onclick=\"confirmDelete('"+projet.id+"','"+String(projet.nom).replace(/'/g,"\\'")+"')\" title=\"Supprimer\">"+
+        "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"3 6 5 6 21 6\"/><path d=\"M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6\"/><path d=\"M10 11v6M14 11v6\"/><path d=\"M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2\"/></svg>"+
+        "</button>";
+      container.appendChild(card);
+    });
+  });
+}
+
+function loadProjectAndGo(id){
+  loadHistory(function(list){
+    var projet=list.find(function(p){ return p.id===id; });
+    if(!projet) return;
+    var c=projet.config||{};
+    S.porteSimple=c.porteSimple||[]; S.porteDouble=c.porteDouble||[];
+    S.chevFumisterie=c.chevFumisterie||0; S.chevHTBT=c.chevHTBT||0;
+    S.chevEntree=c.chevEntree||[]; S.chevRejet=c.chevRejet||[];
+    S.boitePolice=c.boitePolice||[]; S.boiteFuel=c.boiteFuel||[];
+    S.gardeCorps=c.gardeCorps||false; S.gardeCorpsPlats=c.gardeCorpsPlats||0;
+    S.rails=c.rails||0; S.crosses=c.crosses||0; S.anneaux=c.anneaux||0;
+    S.bac=c.bac||0; S.renfortsInt=c.renfortsInt||0; S.renfortsSous=c.renfortsSous||0;
+    S.projNom=projet.nom; S.projEdite=projet.edite; S.projControle=projet.controle; S.projRev=projet.rev;
+    restoreUI();
+    showPage("page-config");
+    document.getElementById("stepBadge").textContent="\u00c9tape 1/2";
   });
 }
 
