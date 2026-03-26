@@ -251,29 +251,6 @@ select.form-input option{background:var(--bg2);}
 .modal-delete-confirm{flex:1;padding:12px;background:var(--red);border:none;color:#fff;border-radius:var(--radius);font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:14px;cursor:pointer;transition:all .15s;}
 .modal-delete-confirm:hover{background:#dc2626;}
 </style>
-
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <script>
-    var firebaseConfig = {
-      apiKey: "AIzaSyAD9Ls3lcSNzxhzdIl3FOnOswIrizvG-UE",
-      authDomain: "airopta-cq-general.firebaseapp.com",
-      projectId: "airopta-cq-general",
-      storageBucket: "airopta-cq-general.firebasestorage.app",
-      messagingSenderId: "152508340985",
-      appId: "1:152508340985:web:fa785cf810cf505bc42028"
-    };
-    try {
-      firebase.initializeApp(firebaseConfig);
-      window.db = firebase.firestore();
-      window.firebaseReady = true;
-    } catch(e) {
-      console.warn("Firebase init failed:", e);
-      window.firebaseReady = false;
-      window.db = null;
-    }
-  </script>
 </head>
 <body>
 
@@ -590,6 +567,23 @@ select.form-input option{background:var(--bg2);}
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+(function(){
+  try{
+    var cfg={apiKey:"AIzaSyAD9Ls3lcSNzxhzdIl3FOnOswIrizvG-UE",authDomain:"airopta-cq-general.firebaseapp.com",projectId:"airopta-cq-general",storageBucket:"airopta-cq-general.firebasestorage.app",messagingSenderId:"152508340985",appId:"1:152508340985:web:fa785cf810cf505bc42028"};
+    firebase.initializeApp(cfg);
+    window.db=firebase.firestore();
+    window.firebaseReady=true;
+    console.log("Firebase OK");
+  }catch(e){
+    console.warn("Firebase init failed:",e);
+    window.firebaseReady=false;
+    window.db=null;
+  }
+})();
+</script>
 <script>
 
 // ══════════════════════════════════════════
@@ -1560,5 +1554,6 @@ renderHistory();
     </div>
   </div>
 </div>
+
 </body>
 </html>
