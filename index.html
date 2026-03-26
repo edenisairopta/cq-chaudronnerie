@@ -613,21 +613,30 @@ function showToast(msg, color){
 }
 
 function loadHistory(callback){
-  if(!isFirebaseAvailable()){
-    try{ var r=localStorage.getItem(STORAGE_KEY); var list=r?JSON.parse(r):[]; if(callback) callback(list); else return list; }
-    catch(e){ if(callback) callback([]); else return []; }
-    return;
-  }
-  db.collection(COLLECTION_CHAUD).orderBy("savedAt","desc").limit(50).get().then(function(snap){
-    var list=[];
-    snap.forEach(function(doc){ var d=doc.data(); d.id=doc.id; list.push(d); });
-    if(callback) callback(list);
-  }).catch(function(e){
-    console.error("Firebase load error:",e);
+  // Essayer Firebase en premier, sinon localStorage
+  if(isFirebaseAvailable()){
+    var collName = typeof COLLECTION_CHAUD !== "undefined" ? COLLECTION_CHAUD : COLLECTION_CQ;
+    db.collection(collName).orderBy("savedAtStr","desc").limit(100).get()
+      .then(function(snap){
+        var list=[];
+        snap.forEach(function(doc){ var d=doc.data(); d.id=doc.id; list.push(d); });
+        // Trier par date desc
+        list.sort(function(a,b){ return (b.savedAtStr||"").localeCompare(a.savedAtStr||""); });
+        if(callback) callback(list);
+      })
+      .catch(function(e){
+        console.error("Firebase load error:",e);
+        // Fallback localStorage
+        try{ var r=localStorage.getItem(STORAGE_KEY); if(callback) callback(r?JSON.parse(r):[]); }
+        catch(e2){ if(callback) callback([]); }
+      });
+  } else {
+    // Fallback localStorage
     try{ var r=localStorage.getItem(STORAGE_KEY); if(callback) callback(r?JSON.parse(r):[]); }
-    catch(e2){ if(callback) callback([]); }
-  });
+    catch(e){ if(callback) callback([]); }
+  }
 }
+
 
 function saveHistory(list){
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }catch(e){}
@@ -636,46 +645,51 @@ function saveHistory(list){
 function saveCurrentProject(){
   try{
     if(!S.projNom) return;
-    var config = {
-      porteSimple: JSON.parse(JSON.stringify(S.porteSimple||[])),
-      porteDouble: JSON.parse(JSON.stringify(S.porteDouble||[])),
-      chevFumisterie: S.chevFumisterie||0,
-      chevHTBT: S.chevHTBT||0,
-      chevEntree: JSON.parse(JSON.stringify(S.chevEntree||[])),
-      chevRejet: JSON.parse(JSON.stringify(S.chevRejet||[])),
-      boitePolice: JSON.parse(JSON.stringify(S.boitePolice||[])),
-      boiteFuel: JSON.parse(JSON.stringify(S.boiteFuel||[])),
-      gardeCorps: S.gardeCorps||false,
-      gardeCorpsPlats: S.gardeCorpsPlats||0,
-      rails: S.rails||0, crosses: S.crosses||0, anneaux: S.anneaux||0,
-      bac: S.bac||0, renfortsInt: S.renfortsInt||0, renfortsSous: S.renfortsSous||0
-    };
+    var config = {};
+    Object.keys(S).forEach(function(k){ try{ config[k]=JSON.parse(JSON.stringify(S[k])); }catch(e){ config[k]=S[k]; } });
     var projet = {
-      savedAt: firebaseAvailable ? firebase.firestore.Timestamp.now() : null,
       savedAtStr: new Date().toLocaleDateString("fr-FR"),
-      nom: S.projNom, edite: S.projEdite, controle: S.projControle, rev: S.projRev,
+      nom: S.projNom||"", edite: S.projEdite||"", controle: S.projControle||"", rev: S.projRev||"",
       config: config
     };
 
-    if(!isFirebaseAvailable()){
-      var list=JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]");
+    // TOUJOURS sauvegarder en localStorage (backup local)
+    try{
+      var localList = JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]");
       var found=false;
-      for(var i=0;i<list.length;i++){
-        if(list[i].nom===projet.nom&&list[i].rev===projet.rev){ list[i]=Object.assign({},projet,{id:list[i].id}); found=true; break; }
+      for(var i=0;i<localList.length;i++){
+        if(localList[i].nom===projet.nom && localList[i].rev===projet.rev){
+          localList[i]=Object.assign({},projet,{id:localList[i].id||Date.now().toString()});
+          found=true; break;
+        }
       }
-      if(!found) list.unshift(Object.assign({},projet,{id:Date.now().toString()}));
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-      showToast("\u2713 Projet sauvegard\u00e9 !");
-      return;
-    }
+      if(!found) localList.unshift(Object.assign({},projet,{id:Date.now().toString()}));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(localList));
+    }catch(le){ console.warn("localStorage save failed:", le); }
 
-    db.collection(COLLECTION_CHAUD).where("nom","==",S.projNom).where("rev","==",S.projRev).get().then(function(snap){
-      if(!snap.empty){ return db.collection(COLLECTION_CHAUD).doc(snap.docs[0].id).set(projet); }
-      else { return db.collection(COLLECTION_CHAUD).add(projet); }
-    }).then(function(){ showToast("\u2713 Projet sauvegard\u00e9 !"); })
-    .catch(function(e){ console.error("Firebase save error:",e); showToast("\u26a0 Erreur sauvegarde","#ef4444"); });
+    // AUSSI sauvegarder dans Firebase si disponible
+    if(isFirebaseAvailable()){
+      var fbProjet = Object.assign({}, projet, {savedAt: firebase.firestore.FieldValue.serverTimestamp()});
+      db.collection(COLLECTION_CHAUD)
+        .where("nom","==",S.projNom).where("rev","==",S.projRev)
+        .get().then(function(snap){
+          if(!snap.empty){
+            return db.collection(COLLECTION_CHAUD).doc(snap.docs[0].id).set(fbProjet);
+          } else {
+            return db.collection(COLLECTION_CHAUD).add(fbProjet);
+          }
+        }).then(function(){
+          showToast("\u2713 Projet sauvegard\u00e9 !");
+        }).catch(function(e){
+          console.error("Firebase save error:",e);
+          showToast("\u2713 Sauvegard\u00e9 en local");
+        });
+    } else {
+      showToast("\u2713 Projet sauvegard\u00e9 !");
+    }
   }catch(e){ console.error("saveCurrentProject error:",e); }
 }
+
 
 function deleteProject(id){
   if(!isFirebaseAvailable()){
